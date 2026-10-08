@@ -25,7 +25,7 @@ try {
   for (const file of manifest.files) {
     await cp(join(source, file), join(stage, file), { recursive: true });
   }
-  await cp(join(root, 'LICENSE'), join(stage, 'LICENSE'));
+  await cp(join(root, 'LICENSE.md'), join(stage, 'LICENSE.md'));
   await cp(join(source, 'README.md'), join(stage, 'README.md'));
   manifest.name = '@chat-js/workflow-world-postgres';
   manifest.version = '5.0.0-beta.40-chatjs.1';
