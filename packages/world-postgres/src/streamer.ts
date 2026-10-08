@@ -418,7 +418,12 @@ export function createStreamer(pool: Pool, drizzle: Drizzle): PostgresStreamer {
                 data: streams.chunkData,
               })
               .from(streams)
-              .where(and(eq(streams.streamId, name), ...(lastChunkId ? [gt(streams.chunkId, lastChunkId)] : [])))
+              .where(
+                and(
+                  eq(streams.streamId, name),
+                  ...(lastChunkId ? [gt(streams.chunkId, lastChunkId)] : [])
+                )
+              )
               .orderBy(streams.chunkId);
 
             // Resolve negative offset relative to the data chunk count

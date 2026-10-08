@@ -1,7 +1,7 @@
-import { createCandidateRegistry } from './candidate-registry.js';
 import type { Storage, World } from '@workflow/world';
 import { mintedSpecVersion, reenqueueActiveRuns } from '@workflow/world';
 import { Pool } from 'pg';
+import { createCandidateRegistry } from './candidate-registry.js';
 import type { PostgresWorldConfig } from './config.js';
 import { createClient, type Drizzle } from './drizzle/index.js';
 import { createQueue } from './queue.js';
@@ -56,7 +56,10 @@ export function createWorld(
     applicationManagedShutdown:
       process.env.WORKFLOW_POSTGRES_APPLICATION_MANAGED_SHUTDOWN === '1',
   }
-): World & { start(): Promise<void>; candidateRegistry: ReturnType<typeof createCandidateRegistry> } {
+): World & {
+  start(): Promise<void>;
+  candidateRegistry: ReturnType<typeof createCandidateRegistry>;
+} {
   const maxPoolSize = config.maxPoolSize ?? getDefaultMaxPoolSize();
   const pool =
     config.pool ||
@@ -96,9 +99,18 @@ export function createWorld(
     },
     streams: {
       ...streamer.streams,
-      async write(...args) { await candidateRegistry.assertReady(); return streamer.streams.write(...args); },
-      async writeMulti(...args) { await candidateRegistry.assertReady(); return streamer.streams.writeMulti!(...args); },
-      async close(...args) { await candidateRegistry.assertReady(); return streamer.streams.close(...args); },
+      async write(...args) {
+        await candidateRegistry.assertReady();
+        return streamer.streams.write(...args);
+      },
+      async writeMulti(...args) {
+        await candidateRegistry.assertReady();
+        return streamer.streams.writeMulti!(...args);
+      },
+      async close(...args) {
+        await candidateRegistry.assertReady();
+        return streamer.streams.close(...args);
+      },
     },
     ...(config.streamFlushIntervalMs !== undefined && {
       streamFlushIntervalMs: config.streamFlushIntervalMs,
@@ -124,9 +136,17 @@ export function createWorld(
   };
 }
 
+export type {
+  CandidateInventory,
+  CandidateOperationSnapshot,
+  CandidateOperationState,
+  CreationCandidate,
+  TrackedCandidateOperation,
+} from './candidate-registry.js';
+export {
+  CandidateRegistryConflictError,
+  createCandidateRegistry,
+} from './candidate-registry.js';
 // Re-export schema for users who want to extend or inspect the database schema
 export type { PostgresWorldConfig } from './config.js';
 export * from './drizzle/schema.js';
-
-export { createCandidateRegistry, CandidateRegistryConflictError } from './candidate-registry.js';
-export type { CandidateInventory, CandidateOperationSnapshot, TrackedCandidateOperation, CreationCandidate, CandidateOperationState } from './candidate-registry.js';

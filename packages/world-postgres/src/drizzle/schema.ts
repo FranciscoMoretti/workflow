@@ -314,8 +314,8 @@ export const creationOperations = schema.table('creation_operations', {
   canonicalRunId: text('canonical_run_id'),
   protocolVersion: integer('protocol_version').notNull(),
   state: text('state').notNull(),
-  sealedAt: timestamp('sealed_at', {withTimezone:true}),
-  retiredAt: timestamp('retired_at', {withTimezone:true}),
+  sealedAt: timestamp('sealed_at', { withTimezone: true }),
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
 });
 export const creationCandidates = schema.table('creation_candidates', {
   runId: text('run_id').primaryKey(),

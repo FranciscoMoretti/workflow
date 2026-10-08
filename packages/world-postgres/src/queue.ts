@@ -163,7 +163,10 @@ export function createQueue(
     headers,
     delaySeconds,
     jobKey,
-    runId, initialRun, creationAttributes, healthCheck,
+    runId,
+    initialRun,
+    creationAttributes,
+    healthCheck,
   }: {
     runId?: string;
     initialRun?: boolean;
@@ -192,7 +195,10 @@ export function createQueue(
       getJobQueueName(),
       MessageData.encode({
         id: queueId,
-        runId, initialRun, creationAttributes, healthCheck,
+        runId,
+        initialRun,
+        creationAttributes,
+        healthCheck,
         data: Buffer.from(body),
         attempt,
         messageId,
