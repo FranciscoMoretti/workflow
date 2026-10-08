@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { WorkflowRunNotFoundError } from '@workflow/errors';
 import type { WorkflowRun } from '@workflow/world';
@@ -50,7 +50,7 @@ describe('runs.waitForTerminalStatus (Postgres integration)', () => {
     process.env.DATABASE_URL = dbUrl;
     process.env.WORKFLOW_POSTGRES_URL = dbUrl;
 
-    execSync('pnpm db:push', {
+    execFileSync(process.execPath, ['dist/cli.js'], {
       stdio: 'inherit',
       cwd: process.cwd(),
       env: process.env,
