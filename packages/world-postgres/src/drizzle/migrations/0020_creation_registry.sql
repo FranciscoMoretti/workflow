@@ -84,6 +84,17 @@ BEGIN
     SELECT parent_operation_key,source_operation_key INTO parent_key,source_key
       FROM workflow.creation_operations WHERE operation_key=op_key;
   ELSE
+    -- Ordinary Workflow families do not opt into eve ownership. Generic
+    -- descendants of a tracked candidate still inherit its admission fence.
+    IF op_key IS NULL AND coalesce(native_name,'') NOT LIKE 'workflow//eve%'
+       AND NOT coalesce(attrs ?| ARRAY['$eve.type','$eve.parent','$eve.root',
+         '$eve.creation.intent','$eve.creation.role','$eve.creation.claim_token'],false)
+       AND NOT EXISTS (
+         SELECT 1 FROM workflow.creation_candidates WHERE run_id = ANY(ARRAY[
+           attrs->>'$parentRunId',attrs->>'$rootRunId',attrs->>'$eve.parent',attrs->>'$eve.root'])
+       ) THEN
+      RETURN;
+    END IF;
     FOREACH lineage_run IN ARRAY ARRAY[attrs->>'$parentRunId',attrs->>'$eve.parent',attrs->>'$rootRunId',attrs->>'$eve.root'] LOOP
       IF lineage_run IS NULL THEN CONTINUE; END IF;
       SELECT operation_key INTO lineage_key FROM workflow.creation_candidates WHERE run_id=lineage_run;

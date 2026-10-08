@@ -61,6 +61,30 @@ async function claim(runId: string, operationKey: string) {
 }
 
 describe('durable candidate admission and retirement', () => {
+  test('ordinary non-eve workflow families remain outside the registry', async () => {
+    const parent = makeId();
+    const child = makeId();
+    await insertRun(parent, {}, 'workflow//example//parent');
+    await insertRun(
+      child,
+      {
+        $parentRunId: parent,
+        $rootRunId: parent,
+      },
+      'workflow//example//child'
+    );
+    const tracked = await pool.query(
+      'SELECT run_id FROM workflow.creation_candidates WHERE run_id = ANY($1::text[])',
+      [[parent, child]]
+    );
+    expect(tracked.rows).toEqual([]);
+    await expect(
+      insertRun(makeId(), {
+        $parentRunId: parent,
+        $rootRunId: parent,
+      })
+    ).rejects.toThrow('Parent candidate inventory is incomplete');
+  });
   test('retains immutable native attribution through queue-first admission and payload purge', async () => {
     const root = makeId(),
       child = makeId(),
