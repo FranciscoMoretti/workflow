@@ -43,7 +43,8 @@
     "clean": "tsc --build --clean && rm -rf dist",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:push": "node dist/cli.js"
+    "db:push": "node dist/cli.js",
+    "test:registry": "vitest run --config vitest.registry.config.ts"
   },
   "dependencies": {
     "@vercel/queue": "catalog:",

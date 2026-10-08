@@ -261,7 +261,7 @@ describe('postgres queue http execution', () => {
     }
   });
 
-  it('serializes workflow queue execution for the same runId', async () => {
+  it('allows a distinct delivery to wake the same workflow run', async () => {
     let resolveFirstRequestStarted!: () => void;
     const firstRequestStarted = new Promise<void>((resolve) => {
       resolveFirstRequestStarted = resolve;
@@ -311,22 +311,23 @@ describe('postgres queue http execution', () => {
       );
 
       await firstRequestStarted;
-      await Promise.resolve();
-      expect(requestCount).toBe(1);
-      expect(maxActiveRequests).toBe(1);
+      await secondExecution;
+      expect(requestCount).toBe(2);
+      expect(maxActiveRequests).toBe(2);
 
       resolveReleaseFirstRequest();
       await Promise.all([firstExecution, secondExecution]);
 
       expect(requestCount).toBe(2);
-      expect(maxActiveRequests).toBe(1);
+      expect(maxActiveRequests).toBe(2);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
+      resolveReleaseFirstRequest();
       vi.unstubAllGlobals();
     }
   });
 
-  it('serializes namespaced workflow queue execution for the same runId', async () => {
+  it('allows a distinct delivery to wake the same namespaced workflow run', async () => {
     let resolveFirstRequestStarted!: () => void;
     const firstRequestStarted = new Promise<void>((resolve) => {
       resolveFirstRequestStarted = resolve;
@@ -379,17 +380,18 @@ describe('postgres queue http execution', () => {
       );
 
       await firstRequestStarted;
-      await Promise.resolve();
-      expect(requestCount).toBe(1);
-      expect(maxActiveRequests).toBe(1);
+      await secondExecution;
+      expect(requestCount).toBe(2);
+      expect(maxActiveRequests).toBe(2);
 
       resolveReleaseFirstRequest();
       await Promise.all([firstExecution, secondExecution]);
 
       expect(requestCount).toBe(2);
-      expect(maxActiveRequests).toBe(1);
+      expect(maxActiveRequests).toBe(2);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
+      resolveReleaseFirstRequest();
       vi.unstubAllGlobals();
     }
   });

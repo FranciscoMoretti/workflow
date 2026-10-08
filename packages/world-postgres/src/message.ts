@@ -8,6 +8,10 @@ import { Base64Buffer } from './zod.js';
  * maybe later we can have a `blobs` table for larger payloads
  */
 export const MessageData = z.object({
+  runId: z.string().optional(),
+  initialRun: z.boolean().optional(),
+  healthCheck: z.boolean().optional(),
+  creationAttributes: z.record(z.string(), z.string()).optional(),
   attempt: z.number().describe('The attempt number of the message'),
   messageId: MessageId.describe('The unique ID of the message'),
   idempotencyKey: z.string().optional(),

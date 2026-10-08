@@ -227,3 +227,43 @@ To use the PostgreSQL world, set the `WORKFLOW_TARGET_WORLD` environment variabl
 ```bash
 export WORKFLOW_TARGET_WORLD="@workflow/world-postgres"
 ```
+
+### Concurrent wake-ups and resumed streams
+
+Distinct workflow deliveries, including cancellation, can execute while an earlier
+invocation for the same run awaits a step. Exact delivery idempotency keys remain
+coalesced; run identity alone does not serialize delivery.
+
+A positive stream cursor resolves its consumed prefix using a metadata-only SQL
+query. Payload reads start after that boundary, including at-tail reconnects.
+Zero, negative, and future cursors retain their existing behavior. These changes
+do not change persisted workflow identities, stream chunk IDs, or migrations.
+
+### Candidate registry (experimental ChatJS source branch)
+
+`createCandidateRegistry({ connectionString })` exposes `assertReady()`,
+`inspect({ runId })`, `seal({ runId, expectedOperationKey })`,
+`retire({ runId, expectedOperationKey })`, and `close()`. Callers must authorize
+the supplied run separately. A supplied pool remains caller-owned.
+
+Tracked inventory includes the operation's candidates and an `operations` array
+containing its owned descendants. Each operation has its own canonical run.
+`sourceOperationKey` records checkpoint-copy provenance and does not extend the
+deletion family. Unknown or legacy runs return `inventory-incomplete`.
+
+Seal stabilizes admission and ownership before the application settles every
+canonical owner. Existing settlement writes remain allowed. Retire then blocks
+payload writes; it does not perform settlement or payload deletion. Retained
+associations survive deletion. An auxiliary candidate is not proof of absent
+external effects. Applications must refuse unsupported cleanup contracts.
+
+Run bootstrap on a fresh disposable database when evaluating these draft
+migrations. The runtime checks that required guards are installed. Stop old
+producers before upgrading; legacy inventory needs explicit quarantine or
+verified drainage, not inferred ownership. This branch is not certified for
+production migration or managed Vercel.
+
+Run the real PostgreSQL admission tests separately with `bun run test:registry`
+and `WORKFLOW_POSTGRES_TEST_URL` pointing to an isolated, fully bootstrapped
+database. The suite intentionally fails when that URL is absent. It does not
+run implicitly in the database-free unit suite.

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import {
   eventIdToSlot,
@@ -20,7 +20,7 @@ if (process.platform === 'win32') {
     process.env.WORKFLOW_POSTGRES_URL = dbUrl;
     process.env.DATABASE_URL = dbUrl;
 
-    execSync('pnpm db:push', {
+    execFileSync(process.execPath, ['dist/cli.js'], {
       stdio: 'inherit',
       cwd: process.cwd(),
       env: process.env,

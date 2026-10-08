@@ -17,7 +17,6 @@ import {
   type QueuePrefix,
   resolveQueueNamespace,
   type ValidQueueName,
-  WorkflowInvokePayloadSchema,
 } from '@workflow/world';
 import { createWorld } from '@workflow/world-local';
 import {
@@ -138,10 +137,6 @@ export function createQueue(
 
   const completedMessages = new Set<string>();
   const inflightMessages = new Map<string, Promise<void>>();
-  const inflightWorkflowRuns = new Map<
-    string,
-    Promise<'completed' | 'rescheduled'>
-  >();
   let workerUtils: WorkerUtils | null = null;
   let runner: Runner | null = null;
   let runnerStart: RunnerStart | null = null;
@@ -168,7 +163,15 @@ export function createQueue(
     headers,
     delaySeconds,
     jobKey,
+    runId,
+    initialRun,
+    creationAttributes,
+    healthCheck,
   }: {
+    runId?: string;
+    initialRun?: boolean;
+    healthCheck?: boolean;
+    creationAttributes?: Record<string, string>;
     queueId: string;
     body: Buffer | Uint8Array;
     messageId: MessageId;
@@ -192,6 +195,10 @@ export function createQueue(
       getJobQueueName(),
       MessageData.encode({
         id: queueId,
+        runId,
+        initialRun,
+        creationAttributes,
+        healthCheck,
         data: Buffer.from(body),
         attempt,
         messageId,
@@ -496,12 +503,19 @@ export function createQueue(
   const queue: Queue['queue'] = async (queue, message, opts) => {
     await start();
     const { id: queueId } = parseQueueName(queue);
+    const payload = QueuePayloadSchema.parse(message);
+    const healthCheck = '__healthCheck' in payload;
+    const runInput = 'runInput' in payload ? payload.runInput : undefined;
     const body = transport.serialize(message) as Buffer;
     const messageId = MessageId.parse(`msg_${generateMessageId()}`);
     await addGraphileJob({
       queueId,
       body,
       messageId,
+      runId: payload.runId,
+      healthCheck,
+      initialRun: runInput !== undefined,
+      creationAttributes: runInput?.attributes,
       attempt: 1,
       idempotencyKey: opts?.idempotencyKey,
       headers: opts?.headers,
@@ -526,11 +540,6 @@ export function createQueue(
       const queueName = `${queue}${messageData.id}` as ValidQueueName;
       const body = await deserializeMessageBody(messageData.data);
       QueuePayloadSchema.parse(body);
-      const workflowInvoke = WorkflowInvokePayloadSchema.safeParse(body);
-      const workflowRunSerializationKey =
-        workflowInvoke.success && !workflowInvoke.data.stepId
-          ? `workflow:${workflowInvoke.data.runId}`
-          : undefined;
       const executeTask = async (): Promise<'completed' | 'rescheduled'> => {
         const result = await executeMessageOverHttp({
           queueName,
@@ -552,6 +561,10 @@ export function createQueue(
           // lose the wake-up request.
           await addGraphileJob({
             queueId: messageData.id,
+            runId: messageData.runId,
+            initialRun: messageData.initialRun,
+            healthCheck: messageData.healthCheck,
+            creationAttributes: messageData.creationAttributes,
             body: messageData.data,
             messageId: messageData.messageId,
             attempt: attempt + 1,
@@ -570,28 +583,8 @@ export function createQueue(
 
       const idempotencyKey = messageData.idempotencyKey;
       if (!idempotencyKey) {
-        if (workflowRunSerializationKey) {
-          // Preserve step fan-out while preventing two workflow replays from
-          // mutating the same run's event log at the same time.
-          const previous = inflightWorkflowRuns.get(
-            workflowRunSerializationKey
-          );
-          const execution = (previous ?? Promise.resolve())
-            .catch(() => {})
-            .then(() => executeTask())
-            .finally(() => {
-              if (
-                inflightWorkflowRuns.get(workflowRunSerializationKey) ===
-                execution
-              ) {
-                inflightWorkflowRuns.delete(workflowRunSerializationKey);
-              }
-            });
-          inflightWorkflowRuns.set(workflowRunSerializationKey, execution);
-          await execution;
-          return;
-        }
-
+        // Distinct deliveries must wake eagerly waiting workflows (including cancellation).
+        // Only exact delivery idempotency keys are coalesced below.
         await executeTask();
         return;
       }
