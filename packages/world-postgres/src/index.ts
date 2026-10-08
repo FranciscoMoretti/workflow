@@ -1,3 +1,4 @@
+import { createCandidateRegistry } from './candidate-registry.js';
 import type { Storage, World } from '@workflow/world';
 import { mintedSpecVersion, reenqueueActiveRuns } from '@workflow/world';
 import { Pool } from 'pg';
@@ -55,7 +56,7 @@ export function createWorld(
     applicationManagedShutdown:
       process.env.WORKFLOW_POSTGRES_APPLICATION_MANAGED_SHUTDOWN === '1',
   }
-): World & { start(): Promise<void> } {
+): World & { start(): Promise<void>; candidateRegistry: ReturnType<typeof createCandidateRegistry> } {
   const maxPoolSize = config.maxPoolSize ?? getDefaultMaxPoolSize();
   const pool =
     config.pool ||
@@ -64,6 +65,7 @@ export function createWorld(
       ...(maxPoolSize !== undefined ? { max: maxPoolSize } : {}),
     });
 
+  const candidateRegistry = createCandidateRegistry({ pool });
   const drizzle = createClient(pool);
   const queue = createQueue(config, pool);
   // Opens its `LISTEN` connection lazily, on the first `waitForTerminalStatus`
@@ -80,10 +82,29 @@ export function createWorld(
     ...storage,
     ...streamer,
     ...queue,
+    candidateRegistry,
+    events: {
+      ...storage.events,
+      async create(...args: Parameters<Storage['events']['create']>) {
+        await candidateRegistry.assertReady();
+        return storage.events.create(...args);
+      },
+    },
+    async queue(...args) {
+      await candidateRegistry.assertReady();
+      return queue.queue(...args);
+    },
+    streams: {
+      ...streamer.streams,
+      async write(...args) { await candidateRegistry.assertReady(); return streamer.streams.write(...args); },
+      async writeMulti(...args) { await candidateRegistry.assertReady(); return streamer.streams.writeMulti!(...args); },
+      async close(...args) { await candidateRegistry.assertReady(); return streamer.streams.close(...args); },
+    },
     ...(config.streamFlushIntervalMs !== undefined && {
       streamFlushIntervalMs: config.streamFlushIntervalMs,
     }),
     async start() {
+      await candidateRegistry.assertReady();
       await queue.start();
       await reenqueueActiveRuns(
         storage.runs,
@@ -106,3 +127,6 @@ export function createWorld(
 // Re-export schema for users who want to extend or inspect the database schema
 export type { PostgresWorldConfig } from './config.js';
 export * from './drizzle/schema.js';
+
+export { createCandidateRegistry, CandidateRegistryConflictError } from './candidate-registry.js';
+export type { CandidateInventory, CandidateOperationSnapshot, TrackedCandidateOperation, CreationCandidate, CandidateOperationState } from './candidate-registry.js';

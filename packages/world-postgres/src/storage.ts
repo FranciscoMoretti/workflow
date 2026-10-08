@@ -716,6 +716,14 @@ async function handleLegacyEventPostgres(
 }
 
 export function createEventsStorage(drizzle: Drizzle): Storage['events'] {
+  async function findOtherCandidateOwner(runId: string, token: string) {
+    const [owner] = await drizzle.select({runId: Schema.creationOperations.canonicalRunId})
+      .from(Schema.creationCandidates)
+      .innerJoin(Schema.creationOperations, eq(Schema.creationCandidates.operationKey,Schema.creationOperations.operationKey))
+      .where(and(eq(Schema.creationCandidates.runId,runId),eq(Schema.creationCandidates.claimToken,token)))
+      .limit(1);
+    return owner?.runId && owner.runId !== runId ? {runId:owner.runId,hookId:'retained-candidate-owner'} : undefined;
+  }
   const hookRetentionLimitMs = getHookRetentionLimitMs();
   const ulid = monotonicFactory();
   const { events } = Schema;
@@ -1811,9 +1819,8 @@ export function createEventsStorage(drizzle: Drizzle): Storage['events'] {
         const { eventData } = data;
 
         // Check for duplicate token using prepared statement
-        const [existingHook] = await getHookByToken.execute({
-          token: eventData.token,
-        });
+        const [liveHook] = await getHookByToken.execute({token:eventData.token});
+        const existingHook = liveHook ?? await findOtherCandidateOwner(effectiveRunId,eventData.token);
         if (existingHook) {
           // Idempotency: if the existing hook is the *same* (runId, hookId)
           // we are trying to create, this is either a duplicate / replayed
@@ -1917,7 +1924,9 @@ export function createEventsStorage(drizzle: Drizzle): Storage['events'] {
               )
             );
 
-          const [hookValue] = await drizzle
+          const [hookValue] = await (async () => {
+            try {
+            return await drizzle
             .insert(Schema.hooks)
             .values({
               runId: effectiveRunId,
@@ -1935,6 +1944,17 @@ export function createEventsStorage(drizzle: Drizzle): Storage['events'] {
             })
             .onConflictDoNothing()
             .returning();
+            } catch(error) {
+              // Another transaction may win after the optimistic hook read.
+              // Translate the durable owner race through the normal conflict
+              // event path instead of executing the loser's failure hooks.
+              if (await findOtherCandidateOwner(effectiveRunId,eventData.token)) return [];
+              throw error;
+            }
+          })();
+          if (!hookValue && await findOtherCandidateOwner(effectiveRunId,eventData.token)) {
+            return createEventsStorage(drizzle).create(effectiveRunId,data,params);
+          }
           if (hookValue) {
             hookValue.metadata ||= hookValue.metadataJson;
             hook = HookSchema.parse(compact(hookValue));

@@ -58,6 +58,7 @@ async function setupDatabase() {
     const workerUtils = await makeWorkerUtils({ pgPool: pool });
     try {
       await workerUtils.migrate();
+      await pool.query('SELECT workflow.install_creation_queue_guard()');
     } finally {
       await workerUtils.release();
     }

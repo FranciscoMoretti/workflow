@@ -304,3 +304,28 @@ export const streams = schema.table(
     index().on(tb.runId),
   ]
 );
+
+/** Durable identity metadata is intentionally independent of payload row lifetime. */
+export const creationOperations = schema.table('creation_operations', {
+  operationKey: text('operation_key').primaryKey(),
+  intentHash: text('intent_hash').notNull(),
+  parentOperationKey: text('parent_operation_key'),
+  sourceOperationKey: text('source_operation_key'),
+  canonicalRunId: text('canonical_run_id'),
+  protocolVersion: integer('protocol_version').notNull(),
+  state: text('state').notNull(),
+  sealedAt: timestamp('sealed_at', {withTimezone:true}),
+  retiredAt: timestamp('retired_at', {withTimezone:true}),
+});
+export const creationCandidates = schema.table('creation_candidates', {
+  runId: text('run_id').primaryKey(),
+  operationKey: text('operation_key').notNull(),
+  role: text('role').notNull(),
+  claimToken: text('claim_token'),
+  lineage: jsonb('lineage').notNull(),
+  ownerClaimed: boolean('owner_claimed').notNull(),
+});
+export const creationStreams = schema.table('creation_streams', {
+  streamId: text('stream_id').primaryKey(),
+  runId: text('run_id').notNull(),
+});

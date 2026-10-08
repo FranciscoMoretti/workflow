@@ -1,0 +1,56 @@
+name: ChatJS PostgreSQL World
+
+on:
+  pull_request:
+    paths:
+      - 'packages/world-postgres/**'
+      - 'scripts/pack-chatjs-world.mjs'
+      - '.github/workflows/chatjs-world.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-package:
+    if: github.repository == 'FranciscoMoretti/workflow'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: chatjs
+          POSTGRES_PASSWORD: chatjs
+          POSTGRES_DB: registry
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      WORKFLOW_POSTGRES_URL: postgres://chatjs:chatjs@localhost:5432/registry
+      WORKFLOW_POSTGRES_TEST_URL: postgres://chatjs:chatjs@localhost:5432/registry
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.1'
+      # Bun migrates the upstream pnpm catalogs/workspaces in this disposable checkout.
+      - run: bun install --ignore-scripts --filter '@workflow/world-postgres'
+      - run: bun install --ignore-scripts --filter workflow-workspace
+      - run: bun -e 'const p=await Bun.file("package.json").json(); p.packageManager="bun@1.3.1"; await Bun.write("package.json",JSON.stringify(p,null,2));'
+      - run: bun run turbo run build --filter='@workflow/world-postgres...'
+      - run: bun run --cwd packages/world-postgres typecheck
+      - run: bun run --cwd packages/world-postgres test
+      - run: node packages/world-postgres/bin/setup.js
+      - run: bun run --cwd packages/world-postgres test:registry
+      - run: node scripts/pack-chatjs-world.mjs
+      - run: sha256sum artifacts/*.tgz > artifacts/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatjs-world-reviewed-candidate
+          path: artifacts/
+          if-no-files-found: error

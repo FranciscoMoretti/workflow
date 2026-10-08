@@ -358,21 +358,18 @@ export function createStreamer(pool: Pool, drizzle: Drizzle): PostgresStreamer {
           async start(controller) {
             // an empty string is always < than any string,
             // so `'' < ulid()` and `ulid() < ulid()` (maintaining order)
-            let lastChunkId = '';
+            let lastChunkId: StreamChunkEvent['id'] | '' = '';
             let offset = startIndex ?? 0;
             let buffer = [] as StreamChunkEvent[] | null;
 
-            function enqueue(msg: {
-              id: string;
-              data: Uint8Array;
-              eof: boolean;
-            }) {
+            function enqueue(msg: StreamChunkEvent) {
               if (lastChunkId >= msg.id) {
                 // already sent or out of order
                 return;
               }
 
               if (offset > 0) {
+                lastChunkId = msg.id;
                 offset--;
                 return;
               }
@@ -398,6 +395,22 @@ export function createStreamer(pool: Pool, drizzle: Drizzle): PostgresStreamer {
               events.off(`strm:${name}`, onData);
             });
 
+            // Resolve the consumed prefix without fetching its payloads. When no
+            // boundary exists, retain relative and future-index behavior below.
+            if (Number.isSafeInteger(offset) && offset > 0) {
+              const [boundary] = await drizzle
+                .select({ id: streams.chunkId })
+                .from(streams)
+                .where(and(eq(streams.streamId, name), eq(streams.eof, false)))
+                .orderBy(streams.chunkId)
+                .offset(offset - 1)
+                .limit(1);
+              if (boundary) {
+                lastChunkId = boundary.id;
+                offset = 0;
+              }
+            }
+
             const chunks = await drizzle
               .select({
                 id: streams.chunkId,
@@ -405,7 +418,7 @@ export function createStreamer(pool: Pool, drizzle: Drizzle): PostgresStreamer {
                 data: streams.chunkData,
               })
               .from(streams)
-              .where(and(eq(streams.streamId, name)))
+              .where(and(eq(streams.streamId, name), ...(lastChunkId ? [gt(streams.chunkId, lastChunkId)] : [])))
               .orderBy(streams.chunkId);
 
             // Resolve negative offset relative to the data chunk count
